@@ -43,7 +43,7 @@ public:
     void PostEvent(const AppEvent * event);
 
     static void TimerTimeoutHandler(TimerHandle_t xTimer);
-
+    static void gpio_isr_contact_sensor_handler(void*);
     void UpdateClusterState();
 
 private:

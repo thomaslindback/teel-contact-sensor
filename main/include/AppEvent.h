@@ -25,8 +25,8 @@ struct AppEvent
 {
     enum AppEventTypes
     {
-        kEventType_Temp = 0,
-        kEventType_Hum
+        kEventType_OpenClose = 0,
+        kEventType_None
     };
 
     uint16_t Type;

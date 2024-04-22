@@ -43,7 +43,6 @@ namespace {
 } // namespace
 
 AppTask AppTask::sAppTask;
-sht31::ASHT31 temperature;
 
 CHIP_ERROR AppTask::StartAppTask() {
     if(!temperature.begin()) {
@@ -56,6 +55,7 @@ CHIP_ERROR AppTask::StartAppTask() {
         return APP_ERROR_EVENT_QUEUE_FAILED;
     }
 
+/*
     sTimerHandle = xTimerCreate(
         "Timer",
         pdMS_TO_TICKS(60000),
@@ -68,7 +68,7 @@ CHIP_ERROR AppTask::StartAppTask() {
     } else {
         ESP_LOGE(TAG, "Unable to create timer");
     }
-
+*/
 
     // Start App task.
     BaseType_t xReturned;
@@ -76,7 +76,7 @@ CHIP_ERROR AppTask::StartAppTask() {
     return (xReturned == pdPASS) ? CHIP_NO_ERROR : APP_ERROR_CREATE_TASK_FAILED;
 }
 
-void AppTask::TimerTimeoutHandler(TimerHandle_t xTimer) {
+/*void AppTask::TimerTimeoutHandler(TimerHandle_t xTimer) {
     ESP_LOGI(TAG, "Timer timeout");
     float temp = temperature.readTemperature();
     ESP_LOGI(TAG, "Temp: %f", temp);
@@ -86,14 +86,49 @@ void AppTask::TimerTimeoutHandler(TimerHandle_t xTimer) {
     timeout_event.TemperatureEvent.Temp = temp;
     timeout_event.mHandler = TemperatureActionEventHandler;
     sAppTask.PostEvent(&timeout_event);
+}*/
+
+bool inHandleButton = false;
+uint64_t lastIRSTime = 0;
+static void AppTask::gpio_isr_contact_sensor_handler(void* arg) {
+    if((esp_timer_get_time() - lastIRSTime) > 1000000) {
+        inHandleButton = false;
+    }
+    lastIRSTime = esp_timer_get_time();
+    if(inHandleButton) {
+        return;
+    }
+    inHandleButton = true;
+
+    //time_door_event = esp_timer_get_time();
+    //esp_event_post_to(loop_handle, TEEL_DOOR_EVENTS, TEEL_DOOR_EVENT, 
+    //    &time_door_event, sizeof(time_door_event), portMAX_DELAY);
+    AppEvent aEvent = {};
+    aEvent.Type = AppEvent::kEventType_OpenClose;
+    aEvent.mHandler = NULL;
+    sAppTask.PostEvent(&aEvent);
+    
 }
 
 CHIP_ERROR AppTask::Init() {
+    ESP_LOGI(TAG, "--> Setup door sensor <--");
+    gpio_config_t io_conf = {
+        .pin_bit_mask = 1ULL << 11,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .intr_type = GPIO_INTR_ANYEDGE
+    };
+    ESP_ERROR_CHECK(gpio_config(&io_conf));
+    ESP_ERROR_CHECK(gpio_install_isr_service(0));
+    ESP_ERROR_CHECK(gpio_isr_handler_add((gpio_num_t)11, 
+        gpio_isr_contact_sensor_handler, (void*) 11));
+    
     CHIP_ERROR err = CHIP_NO_ERROR;
-    chip::DeviceLayer::PlatformMgr().LockChipStack();
-    app::Clusters::TemperatureMeasurement::Attributes::MinMeasuredValue::Set(kTempEndpointId, 0);
-    app::Clusters::TemperatureMeasurement::Attributes::MaxMeasuredValue::Set(kTempEndpointId, 50);
-    chip::DeviceLayer::PlatformMgr().UnlockChipStack();
+//    chip::DeviceLayer::PlatformMgr().LockChipStack();
+//    app::Clusters::TemperatureMeasurement::Attributes::MinMeasuredValue::Set(kTempEndpointId, 0);
+//    app::Clusters::TemperatureMeasurement::Attributes::MaxMeasuredValue::Set(kTempEndpointId, 50);
+//    chip::DeviceLayer::PlatformMgr().UnlockChipStack();
     return err;
 }
 
@@ -135,12 +170,30 @@ void AppTask::PostEvent(const AppEvent* aEvent) {
 void AppTask::DispatchEvent(AppEvent* aEvent) {
     if (aEvent->mHandler) {
         aEvent->mHandler(aEvent);
-    } else {
-        ESP_LOGI(TAG, "Event received with no handler. Dropping event.");
+    } else { 
+        if(aEvent->Type == kEventType_OpenClose) {
+            ESP_LOGI(TAG, "OpenClose event received");
+
+            chip::DeviceLayer::PlatformMgr().LockChipStack();
+
+            int pin_level = gpio_get_level((gpio_num_t)11);
+
+            EmberAfStatus status = app::Clusters::ContactSensor::Attributes::BooleanState::Set(
+                kTempEndpointId, pin_level);
+            if (status != EMBER_ZCL_STATUS_SUCCESS) {
+                ESP_LOGE(TAG, "Updating temperature cluster failed: %x", status);
+            }
+
+            chip::DeviceLayer::PlatformMgr().UnlockChipStack();
+
+        } else {
+            ESP_LOGI(TAG, "Unknown event!");
+        }
+        
     }
 }
 
-void AppTask::TemperatureActionEventHandler(AppEvent* aEvent) {
+/*void AppTask::TemperatureActionEventHandler(AppEvent* aEvent) {
     //chip::DeviceLayer::PlatformMgr().LockChipStack();
     //sAppTask.UpdateClusterState();
     //chip::DeviceLayer::PlatformMgr().UnlockChipStack();
@@ -153,6 +206,7 @@ void AppTask::TemperatureActionEventHandler(AppEvent* aEvent) {
     chip::DeviceLayer::PlatformMgr().UnlockChipStack();
 
 }
+*/
 
 void AppTask::UpdateClusterState() {
     ESP_LOGI(TAG, "Writing to OnOff cluster");
