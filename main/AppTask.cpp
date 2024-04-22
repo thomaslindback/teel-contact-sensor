@@ -20,9 +20,10 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/timers.h"
-#include "ASHT31.h"
+#include "driver/gpio.h"
 
 #include <app-common/zap-generated/attributes/Accessors.h>
+#include "AppEvent.h"
 
 #define APP_TASK_NAME "APP"
 #define APP_EVENT_QUEUE_SIZE 10
@@ -45,10 +46,6 @@ namespace {
 AppTask AppTask::sAppTask;
 
 CHIP_ERROR AppTask::StartAppTask() {
-    if(!temperature.begin()) {
-        ESP_LOGI(TAG, "Failed to begin sht31");
-    }
-
     sAppEventQueue = xQueueCreate(APP_EVENT_QUEUE_SIZE, sizeof(AppEvent));
     if (sAppEventQueue == NULL) {
         ESP_LOGE(TAG, "Failed to allocate app event queue");
@@ -90,7 +87,7 @@ CHIP_ERROR AppTask::StartAppTask() {
 
 bool inHandleButton = false;
 uint64_t lastIRSTime = 0;
-static void AppTask::gpio_isr_contact_sensor_handler(void* arg) {
+void AppTask::gpio_isr_contact_sensor_handler(void* arg) {
     if((esp_timer_get_time() - lastIRSTime) > 1000000) {
         inHandleButton = false;
     }
@@ -171,14 +168,14 @@ void AppTask::DispatchEvent(AppEvent* aEvent) {
     if (aEvent->mHandler) {
         aEvent->mHandler(aEvent);
     } else { 
-        if(aEvent->Type == kEventType_OpenClose) {
+        if(aEvent->Type == AppEvent::kEventType_OpenClose) {
             ESP_LOGI(TAG, "OpenClose event received");
 
             chip::DeviceLayer::PlatformMgr().LockChipStack();
 
             int pin_level = gpio_get_level((gpio_num_t)11);
 
-            EmberAfStatus status = app::Clusters::ContactSensor::Attributes::BooleanState::Set(
+            EmberAfStatus status = app::Clusters::BooleanState::Attributes::StateValue::Set(
                 kTempEndpointId, pin_level);
             if (status != EMBER_ZCL_STATUS_SUCCESS) {
                 ESP_LOGE(TAG, "Updating temperature cluster failed: %x", status);

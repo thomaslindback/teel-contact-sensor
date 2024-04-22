@@ -135,6 +135,4 @@ extern "C" void app_main()
     {
         ESP_LOGE(TAG, "GetAppTask().StartAppTask() failed : %s", ErrorStr(error));
     }
-    esp_openthread_cli_init();
-    esp_openthread_cli_create_task();
 }
